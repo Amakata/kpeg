@@ -297,3 +297,27 @@ assignment = identifier:i space* = space* value:v ~assign(i,v)
 [Doodle](https://github.com/vito/doodle)
 
 [Kanbanpad](https://kanbanpad.com) (何かを入力してくださいのバーの解析のためのkpegを使用しています)
+
+
+## 翻訳者による補足
+
+### 肯定先読み
+
+Kpegでは、肯定先読みをサポートしている。&のシンボルをルールの前に記載すると、肯定先読みになる。
+
+```
+BulletList = &Bullet ListTight:c
+```
+という文法があった場合、まず最初にBulletがマッチするか試され、もしマッチしたら、一度読込位置をBulletを読む前の状態にもどし、ListTightのマッチにすすむ。
+Bulletにマッチしなかったら、やはり読込位置をBulletの前のに戻しこの文法にはマッチしない。
+
+
+### 否定先読み
+
+Kpegでは、否定先読みをサポートしている。!のシンボルをルールの前に記載すると、否定先読みになる。
+
+```
+ListBlock = !BlankLine Line:c ListBlockLine*:cc
+```
+という文法があった場合、まず最初にBlankLineがマッチしないことが試され、もしマッチしなかったら、一度読込位置をBlankLineを読む前の状態にもどし、Lineのマッチにすすむ。
+BlankLineにマッチしたら、やはり読込位置をBlankLineの前に戻しこの文法にはマッチしない。
