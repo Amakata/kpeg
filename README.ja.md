@@ -322,6 +322,21 @@ ListBlock = !BlankLine Line:c ListBlockLine*:cc
 という文法があった場合、まず最初にBlankLineがマッチしないことが試され、もしマッチしなかったら、一度読込位置をBlankLineを読む前の状態にもどし、Lineのマッチにすすむ。
 BlankLineにマッチしたら、やはり読込位置をBlankLineの前に戻しこの文法にはマッチしない。
 
+### PEGで重要なこと
+
+PEGでは、|は、選択といって、先にかいたものからマッチするか試されるので、選択の順序を考慮する必要がある。
+例えば、
+
+```
+Text = 'a' | 'ab'
+```
+で、'ab'という文字を与えると、最初のaにマッチして終わってしまう。
+
+```
+Text = 'ab' | 'a'
+```
+と書けば、'ab'にも'a'にもマッチする。
+
 ### PEG についての参考情報
 
 https://skami.iocikun.jp/computer/programming/algorithm/parse/peg.html
