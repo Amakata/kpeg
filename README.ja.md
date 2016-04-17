@@ -8,7 +8,7 @@ bugs :: https://github.com/evanphx/kpeg/issues
 KPegはRubyのシンプルなPEGライブラリです。文法を構築するためのネイティブ文法のようなAPIを提供します。
 KPegは、単純で強力なAPIとなることを心がけています。
 
-KPegは、[OMeta メモ化](http://www.vpri.org/pdf/tr2008003_experimenting.pdf)トリックを利用して直接、ルールの左再起に対応します。
+KPegは、[OMeta メモ化](http://www.vpri.org/pdf/tr2008003_experimenting.pdf)トリックを利用して直接、ルールの左再帰に対応します。
 
 ## 最初の文法
 
@@ -321,3 +321,13 @@ ListBlock = !BlankLine Line:c ListBlockLine*:cc
 ```
 という文法があった場合、まず最初にBlankLineがマッチしないことが試され、もしマッチしなかったら、一度読込位置をBlankLineを読む前の状態にもどし、Lineのマッチにすすむ。
 BlankLineにマッチしたら、やはり読込位置をBlankLineの前に戻しこの文法にはマッチしない。
+
+### PEG についての参考情報
+
+https://skami.iocikun.jp/computer/programming/algorithm/parse/peg.html
+https://skami.iocikun.jp/computer/programming/algorithm/parse/packrat.html
+http://www.kmonos.net/pub/Presen/peg/peg.pdf
+http://kmizu.hatenablog.com/entry/20100203/1265183754
+http://www.slideshare.net/kmizushima/introduction-to-peg
+http://ponjbogri.github.io/cll-ja/peg/peg_summary.txt
+http://d.hatena.ne.jp/propella/20071205/p1
