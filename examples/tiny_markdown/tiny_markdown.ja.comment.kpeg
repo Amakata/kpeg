@@ -1,0 +1,261 @@
+%% name = TinyMarkdown::Parser
+
+# AST(抽象構文木)の名前空間の指定。module ::TinyMarkdown の中にATGが作られる。ようになる。
+%% ast-location = ::TinyMarkdown
+
+# ASTのオブジェクトを指定
+# composerには、Parser自身(self)を、positionには、Postionクラスをcontentにはルールの中のコンテンツ部分を渡す。
+%% document = ast DocumentNode(compiler, position, content)
+%% para = ast ParaNode(compiler, position, content)
+%% plain = ast PlainNode(compiler, position, content)
+%% text = ast TextNode(compiler, position, content)
+# levelには、「#」の数を渡す
+%% headline = ast HeadlineNode(compiler, position, level, content)
+%% block_quote = ast BlockQuoteNode(compiler, position, content)
+%% verbatim = ast VerbatimNode(compiler, position, content)
+# horizontal_ruleにはコンテンツはない
+%% horizontal_rule = ast HorizontalRuleNode(compiler, position)
+%% bullet_list = ast BulletListNode(compiler, position, content)
+%% list = ast ListNode(compiler, position, content)
+%% bullet_list_item = ast BulletListItemNode(compiler, position, content)
+%% linebreak = ast LineBreakNode(compiler, position)
+# inline_elementのnameには名前？を渡す
+%% inline_element = ast InlineElementNode(compiler, position, name, content)
+
+%% {
+  # 抽象構文木のプロパティを追加
+  attr_reader :ast
+
+  # コンパイラから位置情報を取得するクラス
+  # posが現在の位置、lineが現在の行、colが現在の列
+  class Position
+    attr_accessor :pos, :line, :col
+    def initialize(compiler)
+      @pos = compiler.pos
+      @line = compiler.current_line
+      @col = compiler.current_column
+    end
+  end
+
+  # 現在の位置を取得するメソッド。ASTのノードを呼び出すときに第２引数で使う
+  def position
+    Position.new(self)
+  end
+}
+
+# ルールの開始
+root = Start
+
+# 最初に一文字があれば成功、なければエラーになるようにするために「&.」がある。
+# @astにDocのASTのノードを設定している。（これで全体にアクセスできる）
+Start = &. Doc:c { @ast = c  }
+
+# Doc は 0個以上のブロックからなり、そのブロックを束ねた物をDocumentNodeとして生成
+Doc =       Block*:c
+            ~document(self, position, c)
+
+# Blockは、0個以上のBlankLineに続くブロック要素からなる。
+# 優先度が高いものほどマッチしやすいのでここでのブロックの順番は重要
+Block =     BlankLine*
+            ( BlockQuote
+            | Verbatim
+            | HorizontalRule
+            | Heading
+            | BulletList
+            | Para
+            | Plain )
+
+# Paraはブロック要素の一つ
+# インデントに成らないスペース(スペース1〜3個)につづくInlines + BlankLineが1つ以上の場合はInlinesをParaNodeとして生成
+Para =      NonindentSpace Inlines:a BlankLine+ ~para(self, position, a)
+
+# Plainはブロック要素の一つ
+# InlinesはParaNodeとして生成
+Plain =     Inlines:a ~plain(self, position, a)
+
+# 最初がNewlineでなく、(Sp '#'* Sp Newline) でもない様な、Inlineを返す。（!は否定先読みなので）
+AtxInline = !Newline !(Sp '#'* Sp Newline) Inline:c { c }
+
+# <>で囲まれたパターンにマッチした文字列がtextに格納されるので、この場合は「#」の数が結果として返る
+# 順番が大事
+AtxStart =  < /######|#####|####|###|##|#/ > { text.length }
+
+# AtxHeadingはブロック要素の一つ
+# 「#」スペース、AtxInlineの繰り返し、(Sp "#"* Sp)? で最後にNewLineがくるような場合は、HeadlineNodeとして生成
+AtxHeading = AtxStart:level Sp AtxInline+:c (Sp "#"* Sp)?  Newline ~headline(self, position, level, c)
+
+# Headingはブロック要素の一つ
+Heading = AtxHeading
+
+# BlockQuoteはブロック要素の一つ
+# BlockQuoteRawをBlockQuoteNodeとして生成
+BlockQuote = BlockQuoteRaw:c ~block_quote(self, position, c)
+
+# 先頭が > で その後にLineがくる(Lineの結果はそのまま全体をcapture)ような要素の1回以上の繰り返し全体をccとして格納
+# ccは配列
+BlockQuoteRaw =  ( '>' ' '? Line:c { c })+:cc { cc }
+
+# 先頭がBlankLineでなく、IndentedLineであるようなものがマッチする
+NonblankIndentedLine = !BlankLine IndentedLine:c { c }
+
+# 0回以上のBlankLineで、NonblankIndentedLineが1回以上つづく場合にBlankLineをそれぞれ改行のTextNodeの配列と
+# NonblankIndentedLine を、NonblankIndentedLineと改行のTextNodeの配列に変換して、平坦化した配列を結合した結果にする
+VerbatimChunk =  (BlankLine { text(self,position,"\n") } )*:c1
+                 (NonblankIndentedLine:c { [c, text(self,position,"\n")] })+:c2 { c1 + c2.flatten }
+
+# VerbatimChunkの1回以上の繰り替えしをVerbatimNodeとして生成する。コンテンツには、VerbatimChunkの結果の配列を平坦化したものを渡す
+# ccにはVerbatimChunkの結果の配列が入るはず
+Verbatim =     VerbatimChunk+:cc ~verbatim(self, position, cc.flatten)
+
+# HorizontalRuleはブロックの一つ
+# NonindentSpaceで始まり、 「* * *」と「 *」の0回以上の繰り返しか「- - -」と「 -」の0回以上の繰り返しか「_ _ _」と「 _」の0回以上の繰り返し Sp NewLine BlankLine+ だったら、HorizontalRuleNodeを生成する
+HorizontalRule = NonindentSpace
+                 ( '*' Sp '*' Sp '*' (Sp '*')*
+                 | '-' Sp '-' Sp '-' (Sp '-')*
+                 | '_' Sp '_' Sp '_' (Sp '_')*)
+                 Sp Newline BlankLine+ ~horizontal_rule(self, position)
+
+# HorizontalRuleではなく、NonindentSpaceがあって、+か*か-で一個以上のSpacecharの場合
+Bullet = !HorizontalRule NonindentSpace ('+' | '*' | '-') Spacechar+
+
+# BulletListはブロックの一つ
+# 先頭がBulletで、先頭からListTightにマッチする場合にはBulletListNodeを生成する
+BulletList = &Bullet ListTight:c ~bullet_list(self, position, c)
+
+# 1個以上のListItemTightと0個以上のBlankLineからなり、その後にBulletがこない場合は、1個以上のListItemTightを結果として返す
+# (Bulletの繰り返しがおわるまでをListTightとしようとしている)
+# ccには、BulletListNodeの配列が入るはず
+ListTight = ListItemTight+:cc
+            BlankLine* !Bullet
+            { cc }
+
+# 先頭がBulletでListBlockとなるような場合にBulletListNodeを生成する
+ListItemTight = Bullet ListBlock:c ~bullet_list_item(self, position, c)
+
+# 先頭がBlankLineではなく、Lineについて0個以上のListBlockLineが来る場合に、ListBlockLineの配列の先頭にLineを追加して結果とする
+ListBlock = !BlankLine Line:c ListBlockLine*:cc { cc.unshift(c) }
+
+# 先頭がBlankLineではなく、Indent? Bulletでもなく、HorizontalRuleでもないOptionallyIndentedLine
+ListBlockLine = !BlankLine
+                !( Indent? Bullet )
+                !HorizontalRule
+                OptionallyIndentedLine
+
+# 「先頭がEndlineではないInlineか、Endlineで、次に続くのがInlineではない」の一回以上の繰り返し、Endline{0,1}なら、末尾のEndline?以外を結果とする。
+# 順番が大事
+Inlines  =  ( !Endline Inline:c { c }
+            | Endline:c &Inline { c } )+:cc Endline?
+            { cc }
+
+# インライン要素の内容。順番が大事
+Inline  = Str
+        | Endline
+        | Space
+        | Strong
+        | Emph
+        | Code
+        | Symbol
+
+# インライン要素
+# 一つ以上のSpacecharのTextNodeにする
+Space = Spacechar+:c ~text(self, position, c.join(""))
+
+# インライン要素
+# 一つ以上のNormalCharと0個以上のStrChunの全体でTextNodeにする
+Str = NormalChar+:c1
+      StrChunk*:c2
+      ~text(self, position, (c1+c2).join(""))
+
+# Strの一部
+# (NormalChar　か _の1つ以上の繰り返しとNormalChar）の1回以上の繰り返し
+StrChunk = (NormalChar:c { [c] } | '_'+:c1 NormalChar:c2 { c1.push(c2) } )+:cc  { cc.flatten }
+
+# インライン要素
+# LineBreak か TerminalEndline か NormalEndline
+# 順番大事?
+Endline =   LineBreak | TerminalEndline | NormalEndline
+
+NormalEndline =   Sp Newline !BlankLine !'>' !AtxStart
+                  !(Line ('='+ | '-'+) Newline)
+                  ~text(self, position, "\n")
+
+TerminalEndline = Sp Newline Eof ~text(self, position, "\n")
+
+LineBreak = "  " NormalEndline ~linebreak(self, position)
+
+# インライン要素
+Symbol =    SpecialChar:c ~text(self, position, c)
+
+# インライン要素
+# 順番大事じゃない
+Emph =      EmphStar | EmphUl
+
+Whitespace = Spacechar | Newline
+
+EmphStar =  '*' !Whitespace
+            ( !'*' Inline:b { b }
+            | StrongStar:b  { b }
+            )+:c
+            '*'
+            ~inline_element(self, position, :em, c)
+
+EmphUl =    '_' !Whitespace
+            ( !'_' Inline:b { b }
+            | StrongUl:b  { b }
+            )+:c
+            '_'
+            ~inline_element(self, position, :em, c)
+
+# インライン要素
+# 順番大事じゃない
+Strong = StrongStar | StrongUl
+
+StrongStar =    "**" !Whitespace
+                ( !"**" Inline:b { b })+:c
+                "**"
+                ~inline_element(self, position, :strong, c)
+
+StrongUl   =    "__" !Whitespace
+                ( !"__" Inline:b { b })+:c
+                "__"
+                ~inline_element(self, position, :strong, c)
+
+
+
+Ticks1 = < /`/ > !'`' { text }
+Ticks2 = < /``/ > !'`' { text }
+
+# インライン要素
+# 順番大事じゃない？
+Code =  ( Ticks1 Sp
+           ( !'`' Nonspacechar )+:c
+           Sp Ticks1  ~text(self, position, c.join(""))
+        | Ticks2 Sp
+           ( !'``' Nonspacechar )+:c
+           Sp Ticks2 ~text(self, position, c.join(""))
+        ):cc
+       ~inline_element(self, position, :code, [cc])
+
+
+BlankLine =     Sp Newline
+
+Quoted =        '"' (!'"' .)* '"' | '\'' (!'\'' .)* '\''
+Eof =           !.
+Spacechar =     < / |\t/ > { text }
+Nonspacechar =  !Spacechar !Newline <.> { text }
+Newline =       "\n" | "\r" "\n"?
+Sp =            Spacechar*
+Spnl =          Sp (Newline Sp)?
+##SpecialChar =   '~' | '*' | '_' | '`' | '&' | '[' | ']' | '(' | ')' | '<' | '!' | '#' | "\\" | "'" | '"'
+SpecialChar =   < /[~*_`&\[\]()<!#\\'"]/ > { text }
+NormalChar =    !( SpecialChar | Spacechar | Newline ) <.> { text }
+AlphanumericAscii =  < /[A-Za-z0-9]/ > { text }
+Digit =  < /[0-9]/ > { text }
+
+NonindentSpace =    < /   |  | |/ > { text }
+Indent =            < /\t|    / > { text }
+IndentedLine =      Indent Line:c { c }
+OptionallyIndentedLine = Indent? Line
+
+Line =  RawLine:c { c }
+RawLine = ((  < /[^\r\n]*/ > ) Newline { text } |  < /.+/ > Eof { text }):c  ~text(self, position, c)
